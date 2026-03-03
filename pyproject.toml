@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "jax-dne-hmc"
+version = "0.1.0"
+description = "Differentiable Neural Emulators with Hamiltonian Monte Carlo built using JAX."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  { name = "Diego Gonzalez" },
+]
+
+dependencies = [
+  "jax==0.6.2",
+  "jaxlib==0.6.2",
+  "flax==0.10.7",
+  "optax==0.2.6",
+  "numpy==2.2.6",
+  "pandas",
+  "matplotlib==3.10.7",
+  "h5py==3.15.1",
+  "scikit-learn==1.7.2",
+  "scienceplots",
+  "clu",
+]
+
+[project.optional-dependencies]
+dev = [
+  "ipykernel",
+  "jupyterlab",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["jax_dne_hmc"]
+
