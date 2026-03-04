@@ -91,10 +91,7 @@ This ensures off-diagonal structure is strongest in the upper-left (small $x$ re
 #### 4. Stationary Kernel
 
 $$
-K_{ij}(\theta) =
-\exp\left(
--\frac{(x_i - x_j)^2}{2 \ell(\theta)^2}
-\right)
+K_{ij}(\theta) = \exp\left(-\frac{(x_i - x_j)^2}{2 \ell(\theta)^2}\right)
 $$
 
 ---
@@ -102,9 +99,7 @@ $$
 #### 5. Tapered Correlation Structure
 
 $$
-\Sigma^{\text{corr}}_{ij}(\theta)
-=
-w_i(\theta) w_j(\theta) K_{ij}(\theta)
+\Sigma^{\text{corr}}_{ij}(\theta)=w_i(\theta) w_j(\theta) K_{ij}(\theta)
 $$
 
 ---
@@ -114,12 +109,7 @@ $$
 Per-bin standard deviation:
 
 $$
-\sigma_i(\theta)
-=
-\sigma_0(\theta)
-\left(
-1 + 0.25 \frac{x_i}{\max(x)}
-\right)
+\sigma_i(\theta)=\sigma_0(\theta)\left(1 + 0.25 \frac{x_i}{\max(x)}\right)
 $$
 
 with
