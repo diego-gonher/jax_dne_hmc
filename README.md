@@ -1,5 +1,5 @@
 ![DNE + HMC logo](DNE%2BHMC%20logo.png)
-# DNE+HMC: Differentiable Neural Emulators with Hamiltonian Monte Carlo
+# DNE + HMC: Differentiable Neural Emulators with Hamiltonian Monte Carlo
 
 Implementation of **Differentiable Neural Emulators (DNE) with Hamiltonian Monte Carlo (HMC)** for parameter estimation in problems where the observable is a **1D vector** (e.g., power spectra, correlation functions) that follows a **multivariate Gaussian likelihood with model-dependent covariance**.
 
