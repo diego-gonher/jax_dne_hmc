@@ -146,7 +146,6 @@ scaler_y_covar.fit(y_covar_train)
 y_covar_train_scaled = scaler_y_covar.transform(y_covar_train)
 y_covar_val_scaled = scaler_y_covar.transform(y_covar_val)
 y_covar_test_scaled = scaler_y_covar.transform(y_covar_test)
-# embed(header='check the shapes of the arrays')
 
 # make a plot showing examples of the raw data
 fig, ax = plt.subplots(1, 1, figsize=(10, 5))
@@ -204,4 +203,3 @@ covar_emulator = CovarEmulator.load_model(checkpoint_dir=checkpoint_dir,
                                           y_val=y_covar_val_scaled,
                                           X_scaler_transform=scaler_X.transform,
                                           y_scaler_inverse_transform=scaler_y_covar.inverse_transform)
-                                          

@@ -17,7 +17,7 @@ from jax_dne_hmc.dne.architectures import MeanMLP
 from jax_dne_hmc.dne.mean_emulator import MeanEmulator
 from jax_dne_hmc.dne.architectures import CovarMLP
 from jax_dne_hmc.dne.covariance_emulator import CovarEmulator
-from dne.losses import mape, rmse, relative_rmse, mse
+from jax_dne_hmc.dne.losses import mape, rmse, relative_rmse, mse
 
 from IPython import embed
 

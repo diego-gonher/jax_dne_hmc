@@ -8,7 +8,5 @@ __pycache__/
 # Dataset files (not tracked)
 **/datasets/
 
-jax_dne_hmc/examples/toy_linear_model/mean_emulator_results/checkpoints/*
-jax_dne_hmc/examples/toy_linear_model/mean_emulator_results/results/*
-jax_dne_hmc/examples/toy_linear_model/covar_emulator_results/checkpoints/*
-jax_dne_hmc/examples/toy_linear_model/covar_emulator_results/results/*
+jax_dne_hmc/examples/toy_linear_model/mean_emulator_results/*
+jax_dne_hmc/examples/toy_linear_model/covar_emulator_results/*
