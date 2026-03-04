@@ -1,0 +1,12 @@
+# macOS
+.DS_Store
+
+# Python bytecode
+*.pyc
+__pycache__/
+
+# Dataset files (not tracked)
+**/datasets/
+
+jax_dne_hmc/examples/toy_linear_model/mean_emulator_results/checkpoints/*
+jax_dne_hmc/examples/toy_linear_model/mean_emulator_results/results/*
