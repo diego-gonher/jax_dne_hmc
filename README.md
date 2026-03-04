@@ -103,6 +103,9 @@ pip install -e .
 
 This installs the package and all dependencies defined in `pyproject.toml`.
 
+> [!WARNING]
+> Installing JAX can be difficult in certain systems, making the use of this pyproject.toml difficult. If you are having issues, I recommend you create a clean python environment, install a workable version of JAX, and then try installing this repository.
+
 ---
 
 # Example Dataset
