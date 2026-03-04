@@ -28,14 +28,16 @@ from IPython import embed
 
 class HParamTunerMean:
 
-    def __init__(self, hparam_tuning_dict, ntrials, X_train_scaled, y_train_scaled, X_val_scaled, y_val_scaled,
+    def __init__(self, hparam_tuning_dict, loss_fn, batch_size, ntrials, X_train_scaled, y_train_scaled, X_val_scaled, y_val_scaled,
                  scaler_X_transform, scaler_y_inverse_transform, checkpoint_directory, hparam_results_directory,
-                 best_model_directory, model_perfromance_directory):
+                 best_model_directory, model_perfromance_directory, emulator_seed=42, study_seed=10):
         """
         Does hyperparameter tuning for the mean emulator, saves the best model, and returns it.
 
         Args:
           hparam_tuning_dict: A dictionary containing the hyperparameters to be tuned.
+          loss_fn: The loss function used to train the emulator.
+          batch_size: The batch size used during training.
           ntrials: The number of trials to run.
           X_train_scaled: The input data scaled.
           y_train_scaled: The output data scaled.
@@ -47,12 +49,16 @@ class HParamTunerMean:
           hparam_results_directory: The directory where the hparam tuning results are saved.
           best_model_directory: The directory where the best model is saved.
           model_perfromance_directory: The directory where the model performance is saved.
+          emulator_seed: The seed used for the emulator.
+          study_seed: The seed used for the hyper-parameter study.
 
         Returns:
           the trained best emulator.
         """
         # save the input arguments
         self.hparam_tuning_dict = hparam_tuning_dict
+        self.loss_fn = loss_fn
+        self.batch_size = batch_size
         self.ntrials = ntrials
         self.X_train_scaled = X_train_scaled
         self.y_train_scaled = y_train_scaled
@@ -64,6 +70,8 @@ class HParamTunerMean:
         self.hparam_results_directory = hparam_results_directory
         self.best_model_directory = best_model_directory
         self.model_performance_directory = model_perfromance_directory
+        self.emulator_seed = emulator_seed
+        self.study_seed = study_seed
 
         # create a list that will contain the evaluation metric for each training run
         self.evaluation_metric_list = []
@@ -90,11 +98,11 @@ class HParamTunerMean:
                                 X_scaler_transform=self.scaler_X_transform,
                                 y_scaler_inverse_transform=self.scaler_y_inverse_transform,
                                 checkpoint_dir=self.checkpoint_directory,
-                                seed=42,
-                                loss_fn=mse,  # mape mse
+                                seed=self.emulator_seed,
+                                loss_fn=self.loss_fn,  
                                 num_epochs=trial.suggest_categorical('num_epochs',
                                                                      self.hparam_tuning_dict['num_epochs']),
-                                batch_size=32)
+                                batch_size=self.batch_size)
 
         # train the model
         best_eval_metric = emulator.train()
@@ -142,9 +150,9 @@ class HParamTunerMean:
         storage_name = f"sqlite:///{self.hparam_results_directory}/{study_name}.db"
 
         # create the study
-        sampler = TPESampler(seed=10)  # 10
+        sampler = TPESampler(seed=self.study_seed)  
         study = optuna.create_study(direction="minimize", sampler=sampler, study_name=study_name, storage=storage_name)
-        study.optimize(self.objective, n_trials=self.ntrials, gc_after_trial=True)  # , n_jobs=1)
+        study.optimize(self.objective, n_trials=self.ntrials, gc_after_trial=True)  
 
         # print out and save the results of the hparam study
         trial = study.best_trial
@@ -186,15 +194,17 @@ class HParamTunerMean:
 
 class HParamTunerCovar:
 
-    def __init__(self, hparam_tuning_dict, ntrials, X_train_scaled, y_train_scaled, X_val_scaled, y_val_scaled,
-                 scaler_X_transform, scaler_y_inverse_transform, checkpoint_directory, hparam_results_directory,
-                 best_model_directory, model_performance_directory):
+    def __init__(self, hparam_tuning_dict, loss_fn, batch_size, ntrials, X_train_scaled, y_train_scaled, X_val_scaled,
+                 y_val_scaled, scaler_X_transform, scaler_y_inverse_transform, checkpoint_directory, hparam_results_directory,
+                 best_model_directory, model_performance_directory, emulator_seed=42, study_seed=10):
         """
         Does hyperparameter tuning for the mean emulator, saves the best model, and returns it.
 
         Args:
           hparam_tuning_dict: A dictionary containing the hyperparameters to be tuned.
           ntrials: The number of trials to run.
+          loss_fn: The loss function used to train the emulator.
+          batch_size: The batch size used during training.
           X_train_scaled: The input data scaled.
           y_train_scaled: The output data scaled.
           X_val_scaled: The input data scaled for the validation set.
@@ -205,6 +215,8 @@ class HParamTunerCovar:
           hparam_results_directory: The directory where the hparam tuning results are saved.
           best_model_directory: The directory where the best model is saved.
           model_performance_directory: The directory where the model performance is saved.
+          emulator_seed: The seed used for the emulator.
+          study_seed: The seed used for the hyper-parameter study.
 
         Returns:
           the trained best emulator.
@@ -212,6 +224,8 @@ class HParamTunerCovar:
         # save the input arguments
         self.hparam_tuning_dict = hparam_tuning_dict
         self.ntrials = ntrials
+        self.loss_fn = loss_fn
+        self.batch_size = batch_size
         self.X_train_scaled = X_train_scaled
         self.y_train_scaled = y_train_scaled
         self.X_val_scaled = X_val_scaled
@@ -222,6 +236,8 @@ class HParamTunerCovar:
         self.hparam_results_directory = hparam_results_directory
         self.best_model_directory = best_model_directory
         self.model_performance_directory = model_performance_directory
+        self.emulator_seed = emulator_seed
+        self.study_seed = study_seed
 
         # create a list that will contain the evaluation metric for each training run
         self.evaluation_metric_list = []
@@ -249,10 +265,10 @@ class HParamTunerCovar:
                                 X_scaler_transform=self.scaler_X_transform,
                                 y_scaler_inverse_transform=self.scaler_y_inverse_transform,
                                 checkpoint_dir=self.checkpoint_directory,
-                                seed=42,
-                                loss_fn=mse,  # mape  mse
+                                seed=self.emulator_seed,
+                                loss_fn=self.loss_fn,  
                                 num_epochs=trial.suggest_categorical('num_epochs', self.hparam_tuning_dict['num_epochs']),
-                                batch_size=32)  # 32  trial.suggest_categorical('batch_size', self.hparam_tuning_dict['batch_size'])
+                                batch_size=self.batch_size)  
 
         # train the model
         best_eval_metric = trainer.train()
@@ -298,9 +314,9 @@ class HParamTunerCovar:
         storage_name = f"sqlite:///{self.hparam_results_directory}/{study_name}.db"
 
         # create the study
-        sampler = TPESampler(seed=10)  # 10
+        sampler = TPESampler(seed=self.study_seed)  
         study = optuna.create_study(direction="minimize", sampler=sampler, study_name=study_name, storage=storage_name)
-        study.optimize(self.objective, n_trials=self.ntrials, gc_after_trial=True)  # , n_jobs=1)
+        study.optimize(self.objective, n_trials=self.ntrials, gc_after_trial=True) 
 
         # print out and save the results of the hparam study
         trial = study.best_trial
