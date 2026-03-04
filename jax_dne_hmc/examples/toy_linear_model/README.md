@@ -103,9 +103,7 @@ $$
 
 $$
 \Sigma^{\text{corr}}_{ij}(\theta)
-$$
-=================================
-$$
+=
 w_i(\theta) w_j(\theta) K_{ij}(\theta)
 $$
 
@@ -117,9 +115,7 @@ Per-bin standard deviation:
 
 $$
 \sigma_i(\theta)
-$$
-================
-$$
+=
 \sigma_0(\theta)
 \left(
 1 + 0.25 \frac{x_i}{\max(x)}
@@ -130,9 +126,7 @@ with
 
 $$
 \sigma_0(\theta)
-$$
-================
-$$
+=
 0.03
 \left(
 1 + 0.15 |m| + 0.10 |b|
@@ -143,9 +137,7 @@ Diagonal contribution:
 
 $$
 \Sigma^{\text{diag}}(\theta)
-$$
-============================
-$$
+=
 \mathrm{diag}(\sigma_i^2)
 $$
 
@@ -155,9 +147,7 @@ $$
 
 $$
 \Sigma(\theta)
-$$
-==============
-$$
+=
 A(\theta)^2 \Sigma^{\text{corr}}(\theta)
 +
 \Sigma^{\text{diag}}(\theta)
@@ -175,9 +165,7 @@ For visualization, we compute the correlation matrix:
 
 $$
 C_{ij}(\theta)
-$$
-==============
-$$
+=
 \frac{\Sigma_{ij}(\theta)}
 {\sqrt{\Sigma_{ii}(\theta)\Sigma_{jj}(\theta)}}
 $$
@@ -239,5 +227,3 @@ This construction mimics the structure of the cosmology case:
 * Guaranteed SPD matrices
 
 while remaining analytically controlled and computationally lightweight.
-
-

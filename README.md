@@ -138,7 +138,7 @@ y_mocks  (N_models, N_mocks, N_bins)
 x        (N_bins)
 ```
 
-You can find a complete explanation of this mode in the example's ![README](jax_dne_hmc/examples/toy_linear_model/README.md).
+You can find a complete explanation of this mode in the example's [README](jax_dne_hmc/examples/toy_linear_model/README.md).
 
 ---
 
