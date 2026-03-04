@@ -1,5 +1,5 @@
 ![DNE + HMC logo](DNE%2BHMC%20logo.png)
-# Differentiable Neural Emulators with Hamiltonian Monte Carlo
+# DNE+HMC: Differentiable Neural Emulators with Hamiltonian Monte Carlo
 
 Implementation of **Differentiable Neural Emulators (DNE) with Hamiltonian Monte Carlo (HMC)** for parameter estimation in problems where the observable is a **1D vector** (e.g., power spectra, correlation functions) that follows a **multivariate Gaussian likelihood with model-dependent covariance**.
 
@@ -8,7 +8,7 @@ This repository provides a clean implementation of the inference method introduc
 **González-Hernández et al. (2025)**
 https://arxiv.org/abs/2509.13498
 
-The goal of this repository is to provide a **standalone, easy-to-use implementation** of the method so that other researchers can apply it to their own simulation-based inference problems.
+The goal of this repository is to provide a **standalone, easy-to-use implementation** of the method so that other researchers can apply it to their own problems.
 
 ---
 
@@ -134,6 +134,8 @@ Sigma    (N_models, N_bins, N_bins)
 y_mocks  (N_models, N_mocks, N_bins)
 x        (N_bins)
 ```
+
+You can find a complete explanation of this mode in the example's ![README](jax_dne_hmc/examples/toy_linear_model/README.md).
 
 ---
 
