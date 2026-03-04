@@ -105,31 +105,31 @@ plt.show()
 # ####################################################################################################
 
 # now we can create a simple MLP model and save it
-laf_mean_trainer = MeanEmulator(model_class=MeanMLP,
-                                model_hparams={'perceptrons_per_layer': [10, 10, 10],
-                                               'n_dim': 11},  # number of dimensions of the observation
-                                optimizer_class=optax.adamw,
-                                optimizer_hparams={'learning_rate': 0.01},
-                                optimizer_schedule=True,
-                                X_train=X_train_scaled,
-                                y_train=y_train_scaled,
-                                X_val=X_val_scaled,
-                                y_val=y_val_scaled,
-                                X_scaler_transform=scaler_X.transform,
-                                y_scaler_inverse_transform=scaler_y.inverse_transform,
-                                checkpoint_dir=checkpoint_dir,
-                                seed=42,
-                                loss_fn=mape,
-                                patience=200,
-                                num_epochs=1000,
-                                batch_size=32)
+mean_trainer = MeanEmulator(model_class=MeanMLP,
+                            model_hparams={'perceptrons_per_layer': [10, 10, 10],
+                                           'n_dim': 11},  # number of dimensions of the observation
+                            optimizer_class=optax.adamw,
+                            optimizer_hparams={'learning_rate': 0.01},
+                            optimizer_schedule=True,
+                            X_train=X_train_scaled,
+                            y_train=y_train_scaled,
+                            X_val=X_val_scaled,
+                            y_val=y_val_scaled,
+                            X_scaler_transform=scaler_X.transform,
+                            y_scaler_inverse_transform=scaler_y.inverse_transform,
+                            checkpoint_dir=checkpoint_dir,
+                            seed=42,
+                            loss_fn=mape,
+                            patience=200,
+                            num_epochs=1000,
+                            batch_size=32)
 
-best_eval_metrics = laf_mean_trainer.train()
+best_eval_metrics = mean_trainer.train()
 # plot the training and validation losses
-laf_mean_trainer.plot_metrics_history(save_dir=results_dir, prefix='mean_emu_')
+mean_trainer.plot_metrics_history(save_dir=results_dir, prefix='mean_emu_')
 
 # load the best model, and bind it to do predictions
-laf_mean_emulator = MeanEmulator.load_model(checkpoint_dir=checkpoint_dir,
+mean_emulator = MeanEmulator.load_model(checkpoint_dir=checkpoint_dir,
                                             X_train=X_train,
                                             y_train=y_train_scaled,
                                             X_val=X_val,
@@ -137,12 +137,12 @@ laf_mean_emulator = MeanEmulator.load_model(checkpoint_dir=checkpoint_dir,
                                             X_scaler_transform=scaler_X.transform,
                                             y_scaler_inverse_transform=scaler_y.inverse_transform)
 
-model_bd = laf_mean_emulator.bind_model()
+model_bd = mean_emulator.bind_model()
 
 # compare the bound model predictions with my own predict function
 predicted_y_scaled_bound = model_bd(X_train_scaled)
-predicted_y_unscaled_bound = laf_mean_emulator.y_scaler_inverse_transform(predicted_y_scaled_bound)
-predicted_y = laf_mean_emulator.predict(X_unscaled=X_train)
+predicted_y_unscaled_bound = mean_emulator.y_scaler_inverse_transform(predicted_y_scaled_bound)
+predicted_y = mean_emulator.predict(X_unscaled=X_train)
 
 print(f'\nbound model scaled predictions shape: {predicted_y_scaled_bound.shape}')
 print(f'bound model predictions shape: {predicted_y_unscaled_bound.shape}')
@@ -150,7 +150,7 @@ print(f'my implementation of predictions shape: {predicted_y.shape}')
 print(f'np.allclose is {np.allclose(predicted_y_unscaled_bound, predicted_y)}\n')
 
 # calculate the mean absolute percentage error in the test set and print it out
-predicted_y_test = laf_mean_emulator.predict(X_unscaled=X_test)
+predicted_y_test = mean_emulator.predict(X_unscaled=X_test)
 mape_test = mape(y_test, predicted_y_test)
 
 print(f'The mean absolute percentage error in the test set is {mape_test.mean()}')
