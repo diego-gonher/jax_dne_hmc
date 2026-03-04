@@ -24,8 +24,6 @@ from jax_dne_hmc.dne.hparam_tuning import HParamTunerMean
 ####################################################################################################
 
 # Directories for results
-# checkpoint_dir = '/Users/diegogonzalez/Documents/Research/ENIGMA/DNE-HMC/jax_dne_hmc/jax_dne_hmc/examples/toy_linear_model/mean_emulator_results/checkpoints'
-# results_dir = '/Users/diegogonzalez/Documents/Research/ENIGMA/DNE-HMC/jax_dne_hmc/jax_dne_hmc/examples/toy_linear_model/mean_emulator_results/results'
 base_directory = '/Users/diegogonzalez/Documents/Research/ENIGMA/DNE-HMC/jax_dne_hmc/jax_dne_hmc/examples/toy_linear_model/mean_emulator_results'
 mean_checkpoint_dir = f'{base_directory}/checkpoints'
 mean_hparam_results_dir = f'{base_directory}/hparam_results'
@@ -230,12 +228,12 @@ mean_trainer.plot_metrics_history(save_dir=mean_hparam_results_dir, prefix='mean
 
 # load the best model, and bind it to do predictions
 mean_emulator = MeanEmulator.load_model(checkpoint_dir=mean_checkpoint_dir,
-                                            X_train=X_train,
-                                            y_train=y_mean_train_scaled,
-                                            X_val=X_val,
-                                            y_val=y_mean_val_scaled,
-                                            X_scaler_transform=scaler_X.transform,
-                                            y_scaler_inverse_transform=scaler_y_mean.inverse_transform)
+                                        X_train=X_train,
+                                        y_train=y_mean_train_scaled,
+                                        X_val=X_val,
+                                        y_val=y_mean_val_scaled,
+                                        X_scaler_transform=scaler_X.transform,
+                                        y_scaler_inverse_transform=scaler_y_mean.inverse_transform)
 
 model_bd = mean_emulator.bind_model()
 

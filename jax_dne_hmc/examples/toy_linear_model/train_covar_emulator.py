@@ -10,19 +10,50 @@ from sklearn.model_selection import train_test_split
 import jax
 import jax.numpy as jnp
 import optax
+import os
 
 from jax_dne_hmc.data import ToyLinearCovLoader
 from jax_dne_hmc.dne.architectures import CovarMLP
 from jax_dne_hmc.dne.covariance_emulator import CovarEmulator
 from jax_dne_hmc.dne.scalers import DiffMinMaxScaler
 from jax_dne_hmc.dne.losses import mape
+from jax_dne_hmc.dne.hparam_tuning import HParamTunerCovar
+from jax_dne_hmc.utils.covar_metrics import calculate_cov_error_optimized
 
 from IPython import embed
 
-# Directories for results
-checkpoint_dir = '/Users/diegogonzalez/Documents/Research/ENIGMA/DNE-HMC/jax_dne_hmc/jax_dne_hmc/examples/toy_linear_model/covar_emulator_results/checkpoints'
-results_dir = '/Users/diegogonzalez/Documents/Research/ENIGMA/DNE-HMC/jax_dne_hmc/jax_dne_hmc/examples/toy_linear_model/covar_emulator_results/results'
+####################################################################################################
+#                                     PIPELINE PARAMETERS                                          #
+####################################################################################################
 
+# Directories for results
+base_directory = '/Users/diegogonzalez/Documents/Research/ENIGMA/DNE-HMC/jax_dne_hmc/jax_dne_hmc/examples/toy_linear_model/covar_emulator_results'
+covar_checkpoint_dir = f'{base_directory}/checkpoints'
+covar_hparam_results_dir = f'{base_directory}/hparam_results'
+covar_best_model_directory = f'{covar_hparam_results_dir}/best_model'
+covar_emulation_error_directory = f'{base_directory}/emulation_metrics'
+
+os.makedirs(covar_checkpoint_dir, exist_ok=True)
+os.makedirs(covar_hparam_results_dir, exist_ok=True)
+os.makedirs(covar_best_model_directory, exist_ok=True)
+os.makedirs(covar_emulation_error_directory, exist_ok=True)
+
+# Hyper-parameter tuning parameters
+N_TRIALS_COVAR = 10  # you might need to reduce this in case you don't have enough memory on your machine
+
+# hparam dictionary for the covar emulator
+# hparam dictionary for the covar emulator
+covar_hparam_tuning_dict = {'perceptrons_per_layer': [[50, 50, 50, 50],
+                                                      [25, 25, 25, 25],
+                                                      [25, 25, 50, 50]],
+                            'learning_rate': {'low': 1e-7,
+                                              'high': 1e0,
+                                              'log': False},
+                            'num_epochs': [750, 1000, 1250, 1500, 1750]}
+
+####################################################################################################
+#                                    LOAD AND PREPARE DATA                                         #
+####################################################################################################
 
 # Load the toy dataset (default path: package's data/datasets/toy_linear_cov_dataset.h5)
 loader = ToyLinearCovLoader()
@@ -169,7 +200,9 @@ ax.set_ylabel('Scaled Power', fontsize=17)
 ax.set_xlabel('Matrix element', fontsize=17)
 plt.show()
 
-#################################################################
+####################################################################################################
+#                              SINGLE TRAIN OF THE COVAR EMULATOR                                  #
+####################################################################################################
 
 # now we can create a simple MLP model and save it
 covar_trainer = CovarEmulator(model_class=CovarMLP,
@@ -184,7 +217,7 @@ covar_trainer = CovarEmulator(model_class=CovarMLP,
                               y_val=y_covar_val_scaled,
                               X_scaler_transform=scaler_X.transform,
                               y_scaler_inverse_transform=scaler_y_covar.inverse_transform,
-                              checkpoint_dir=checkpoint_dir,
+                              checkpoint_dir=covar_checkpoint_dir,
                               seed=42,
                               loss_fn=mape,
                               patience=200,
@@ -193,13 +226,81 @@ covar_trainer = CovarEmulator(model_class=CovarMLP,
 
 best_eval_metrics = covar_trainer.train()
 # plot the training and validation losses
-covar_trainer.plot_metrics_history(save_dir=results_dir, prefix='covar_emu_')
+covar_trainer.plot_metrics_history(save_dir=covar_hparam_results_dir, prefix='covar_emu_')
 
 # load the best model, and bind it to do predictions
-covar_emulator = CovarEmulator.load_model(checkpoint_dir=checkpoint_dir,
+covar_emulator = CovarEmulator.load_model(checkpoint_dir=covar_checkpoint_dir,
                                           X_train=X_train,
                                           y_train=y_covar_train_scaled,
                                           X_val=X_val,
                                           y_val=y_covar_val_scaled,
                                           X_scaler_transform=scaler_X.transform,
                                           y_scaler_inverse_transform=scaler_y_covar.inverse_transform)
+
+
+####################################################################################################
+#                                 HPARAM TUNE THE COVAR EMULATOR                                   #
+####################################################################################################
+# create the hyperparameter tuner for the mean emulator
+hparam_tuner_covar = HParamTunerCovar(hparam_tuning_dict=covar_hparam_tuning_dict,
+                                      loss_fn=mape,
+                                      batch_size=32,
+                                      ntrials=N_TRIALS_COVAR,
+                                      X_train_scaled=X_train_scaled,  # X_train_scaled  y_mean_train_scaled
+                                      y_train_scaled=y_covar_train_scaled,
+                                      X_val_scaled=X_val_scaled,  # X_val_scaled  y_mean_val_scaled
+                                      y_val_scaled=y_covar_val_scaled,
+                                      scaler_X_transform=scaler_X.transform,  # scaler_X.transform  scaler_y_mean
+                                      scaler_y_inverse_transform=scaler_y_covar.inverse_transform,
+                                      checkpoint_directory=covar_checkpoint_dir,
+                                      hparam_results_directory=covar_hparam_results_dir,
+                                      best_model_directory=covar_best_model_directory,
+                                      model_performance_directory=covar_emulation_error_directory,
+                                      emulator_seed=42,
+                                      study_seed=10)
+
+# close all figures
+plt.close('all')
+
+# run the hyperparameter tuning and get the best emulator for the mean
+covar_emulator = hparam_tuner_covar.tune_emulator()
+
+# produce the plots that serve to check the emulation error budget
+list_of_covar_emulation_strings = []
+
+# calculate the error on the diagonal of the covariance matrix as defined by Joe
+# first, reconstruct the covariance matrices from the flat cholesky factors in the test set, this is the ground truth
+true_test_covariance_matrices = covar_emulator.create_covariance_matrix(
+        flat_cholesky_factor_unscaled=covar_emulator.y_scaler_inverse_transform(y_covar_test_scaled))
+
+# now, predict the covariance matrices from the emulator
+predicted_test_covariance_matrices = covar_emulator.predict(X_unscaled=X_test)
+
+
+emulated_covar_errors = np.zeros((true_test_covariance_matrices.shape[0],
+                                  true_test_covariance_matrices.shape[1],
+                                  true_test_covariance_matrices.shape[2]))
+emulated_covar_errors_diag = np.zeros((true_test_covariance_matrices.shape[0],
+                                       true_test_covariance_matrices.shape[1]))
+
+# embed(header='Loaded the covariance matrix emulator')
+
+# loop through the test set and calculate the error for each covariance matrix, both the diagonal and entire
+for i in range(len(true_test_covariance_matrices)):
+    # calculate the error for the entire covariance matrix
+    error_i = calculate_cov_error_optimized(true_covariance_matrix=true_test_covariance_matrices[i],
+                                            emulated_covariance_matrix=predicted_test_covariance_matrices[i])
+    # assign the error to the array, and its diagonal as well
+    emulated_covar_errors[i] = error_i
+    emulated_covar_errors_diag[i] = np.diag(emulated_covar_errors[i])
+
+
+print('\nThe diagonal error')
+# make another plot showing examples of the scaled data
+with plt.style.context(['science', 'no-latex']):
+    fig, ax = plt.subplots(1, 1, figsize=(7, 3.75))
+    ax.plot(x, emulated_covar_errors_diag.mean(axis=0), alpha=0.7, color='red')
+    ax.set_title('Mean diag(covar) error')
+    ax.set_ylabel('Error')
+    ax.set_xlabel('log $k_{eff}$')
+    plt.savefig(os.path.join(covar_emulation_error_directory, 'diag_covar_error.pdf'), bbox_inches='tight', dpi=300)
