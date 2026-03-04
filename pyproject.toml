@@ -25,6 +25,7 @@ dependencies = [
   "scienceplots",
   "clu",
   "ipython',
+  "optuna",
 ]
 
 [project.optional-dependencies]
