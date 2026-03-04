@@ -17,6 +17,8 @@ from jax_dne_hmc.dne.covariance_emulator import CovarEmulator
 from jax_dne_hmc.dne.scalers import DiffMinMaxScaler
 from jax_dne_hmc.dne.losses import mape
 
+from IPython import embed
+
 # Directories for results
 checkpoint_dir = '/Users/diegogonzalez/Documents/Research/ENIGMA/DNE-HMC/jax_dne_hmc/jax_dne_hmc/examples/toy_linear_model/covar_emulator_results/checkpoints'
 results_dir = '/Users/diegogonzalez/Documents/Research/ENIGMA/DNE-HMC/jax_dne_hmc/jax_dne_hmc/examples/toy_linear_model/covar_emulator_results/results'

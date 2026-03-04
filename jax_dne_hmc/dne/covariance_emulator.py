@@ -27,10 +27,7 @@ from flax import struct  # Flax dataclasses
 import optax
 from optax import adam, adamw, squared_error
 
-# setting path
-import sys
-sys.path.append('../')
-from dne.diff_emulators.MeanEmulator import MeanEmulator
+from jax_dne_hmc.dne.mean_emulator import MeanEmulator
 
 # use 64 bit precision
 # from jax import config
@@ -373,4 +370,3 @@ class CovarEmulator(MeanEmulator):
         predicted_covar_matrix = jnp.matmul(c_factor, c_factor.T)
 
         return predicted_covar_matrix
-        
