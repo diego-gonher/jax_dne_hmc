@@ -112,37 +112,14 @@ $$
 \sigma_i(\theta)=\sigma_0(\theta)\left(1 + 0.25 \frac{x_i}{\max(x)}\right)
 $$
 
-with
-
-$$
-\sigma_0(\theta)
-=
-0.03
-\left(
-1 + 0.15 |m| + 0.10 |b|
-\right)
-$$
-
-Diagonal contribution:
-
-$$
-\Sigma^{\text{diag}}(\theta)
-=
-\mathrm{diag}(\sigma_i^2)
-$$
+with $\sigma_0(\theta)=0.03\left(1 + 0.15 |m| + 0.10 |b|\right)$ and a diagonal contribution $\Sigma^{\text{diag}}(\theta)=\mathrm{diag}(\sigma_i^2)$
 
 ---
 
 ### Final Covariance Matrix
 
 $$
-\Sigma(\theta)
-=
-A(\theta)^2 \Sigma^{\text{corr}}(\theta)
-+
-\Sigma^{\text{diag}}(\theta)
-+
-\epsilon I
+\Sigma(\theta)=A(\theta)^2 \Sigma^{\text{corr}}(\theta)+\Sigma^{\text{diag}}(\theta)+\epsilon I
 $$
 
 where $\epsilon \sim 10^{-6}$ ensures numerical positive definiteness.
@@ -154,10 +131,7 @@ where $\epsilon \sim 10^{-6}$ ensures numerical positive definiteness.
 For visualization, we compute the correlation matrix:
 
 $$
-C_{ij}(\theta)
-=
-\frac{\Sigma_{ij}(\theta)}
-{\sqrt{\Sigma_{ii}(\theta)\Sigma_{jj}(\theta)}}
+C_{ij}(\theta)=\frac{\Sigma_{ij}(\theta)}{\sqrt{\Sigma_{ii}(\theta)\Sigma_{jj}(\theta)}}
 $$
 
 This isolates correlation structure independent of variance scaling.
@@ -182,10 +156,7 @@ $$
 
 Instead of emulating $\Sigma$ directly, we:
 
-1. Compute Cholesky factor:
-   $$
-   \Sigma = L L^\top
-   $$
+1. Compute Cholesky factor: $\Sigma = L L^\top$
 
 2. Store:
 
