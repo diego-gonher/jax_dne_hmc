@@ -23,8 +23,8 @@ from functools import partial
 import time
 from IPython import embed
 
-from qso_fitting.fitting.utils import bounded_theta_to_x, x_to_bounded_theta  # variable transformations
-from qso_fitting.fitting.utils import bounded_variable_lnP  # prior
+from jax_dne_hmc.utils.hmc_variable_transformations import bounded_theta_to_x, x_to_bounded_theta  # variable transformations
+from jax_dne_hmc.utils.hmc_variable_transformations import bounded_variable_lnPr  # prior
 
 # from dw_inference.inference.utils import walker_plot, corner_plot
 
@@ -46,29 +46,20 @@ class HMCInference:
 
     """
 
-    def __init__(self, theta_astro_ranges, laf_mean_emulator, laf_cov_emulator, dataset_loader, z_ti,
+    def __init__(self, theta_prior_ranges, mean_emulator, covar_emulator, dataset_loader=None,
                  opt_nsteps=150, opt_lr=0.01, mcmc_nsteps=1000, mcmc_num_chains=4, mcmc_warmup=1000,
                  mcmc_init_perturb=0.05,  mcmc_max_tree_depth=10, mcmc_dense_mass=True, key=random.PRNGKey(42)):
         """
         Initialize the HMCInference class.
 
         Args:
-            theta_astro_ranges (list):
+            theta_prior_ranges (list):
                 List of length n_params containing 2-d tuples, where each tuple is the range of the parameter.
                 The first element of the tuple is the lower bound, and the second element is the upper bound.
-            laf_mean_emulator (TrainerModule):
-                An instance of the LAFMeanEmulator class.
-            laf_cov_emulator (LAFDatasetLoader):
-                The emulator used for the covariance of the autocorrelation function. Currently, I use the dataset
-                loader as a placeholder until I have the emulator ready.
-            dataset_loader (LAFDatasetLoader):
-                An instance of the LAFDatasetLoader class. This is used alognside true thetas and with NGP interpolation
-            z_ti (String):
-                String corresponding to the redshift bin of the model to infer, this is temporary.
-            mfp_ti (float):
-                The mean free path of the model to infer, this is temporary.
-            mean_flux_ti (float):
-                The mean flux of the model to infer, this is temporary.
+            mean_emulator (TrainerModule):
+                An instance of the MeanEmulator class.
+            covar_emulator (TrainerModule):
+                The emulator used for the covariance of the autocorrelation function. 
             opt_nsteps (int):
                 Number of the quick optimization steps used for initializing x for the HMC.
             opt_lr (float):
@@ -88,22 +79,19 @@ class HMCInference:
             key (JAX PRNG key):
                 pseudo-random number generator key.
         """
-        # STORE THE PARAMETERS TO INFER, THIS IS TEMPORARY AND ONLY USED BY THE mcmc METHOD
-        self.z_ti = z_ti
-
         # Store the parameters
-        self.ndim = 2  # this is hardcoded for our case
-        self.theta_astro_ranges = theta_astro_ranges
-        self.theta_astro_inits = tuple([np.mean([tup[0], tup[1]]) for tup in theta_astro_ranges])  # mean of the ranges
-        self.theta_astro_mins = jnp.array([astro_par_range[0] for astro_par_range in self.theta_astro_ranges])
-        self.theta_astro_maxs = jnp.array([astro_par_range[1] for astro_par_range in self.theta_astro_ranges])
+        self.ndim = len(theta_prior_ranges)
+        self.theta_prior_ranges = theta_prior_ranges
+        self.theta_inits = tuple([np.mean([tup[0], tup[1]]) for tup in theta_prior_ranges])  # mean of the ranges
+        self.theta_prior_mins = jnp.array([par_range[0] for par_range in self.theta_prior_ranges])
+        self.theta_prior_maxs = jnp.array([par_range[1] for par_range in self.theta_prior_ranges])
 
-        # Set astro parameter priors (Smoothed Box Prior is a differentiable uniform distribution)
-        self.x_astro_priors = [bounded_variable_lnP, bounded_variable_lnP]
+        # Set parameter priors in the HMC latent space (Smoothed Box Prior is a differentiable uniform distribution)
+        self.x_priors = [bounded_variable_lnPr]*self.ndim
 
         # Store the emulators and the dataset loader
-        self.laf_mean_emulator = laf_mean_emulator
-        self.laf_cov_emulator = laf_cov_emulator
+        self.mean_emulator = mean_emulator
+        self.covar_emulator = covar_emulator
         self.dataset_loader = dataset_loader
 
         # Set the optimizer parameters
@@ -122,10 +110,7 @@ class HMCInference:
         # These are some class attributes used in the case of multiple inferences that are used to save the results
         self.n_mock_datasets = None
         self.theta_true = None
-        self.theta_true_ngp = None  # THIS IS TEMPORARY
-        self.theta_true_og = None  # THIS IS TEMPORARY
-        self.gaussian_mocks = None  # this is used to save the correct true model, which depends on the type of mocks
-        self.autocorrelation_fn_mock_datasets = None
+        self.observed_datasets = None
         self.x_true = None
         self.mcmc_nsteps_tot = None
         self.neff = None
@@ -167,7 +152,7 @@ class HMCInference:
     def _x_to_theta(self, x):
         """
         Transform from HMC parameter vector x into parameter vector theta. This is the single element version called by
-         the vectorized version above.
+        the vectorized version above.
 
         Args:
             x (jax.numpy array):
@@ -217,13 +202,14 @@ class HMCInference:
 
     # Now the log functions for the prior and likelihood evaluations
     @partial(jit, static_argnums=(0,))
-    def ln_prior(self, x_astro):
+    def ln_prior(self, x_param):
         """
-        Compute the prior on astro_params
+        Compute the prior on the theta parameters transformed to the latent 
+        HMC space.
 
         Args:
-            x_astro (ndarray): shape = (nastro,)
-                dimensionless astrophysical parameter vector
+            x_param (ndarray): shape = (nastro,)
+                dimensionless (in the latent HMC space) parameter vector
 
         Returns:
             prior (float):
@@ -231,112 +217,110 @@ class HMCInference:
         """
 
         prior = 0.0
-        for x_ast, x_astro_pri in zip(x_astro, self.x_astro_priors):
-            prior += x_astro_pri(x_ast)
+        for x_, x_pri in zip(x_param, self.x_priors):
+            prior += x_pri(x_)
 
         return prior
 
-    # function that uses the emulators to get the mean autocorrelation function and its corresponding covariance matrix
+    # function that uses the emulators to get the mean and its corresponding covariance matrix
     @partial(jit, static_argnums=(0,))
-    def get_mean_and_covar(self, theta_astro):
+    def get_mean_and_covar(self, theta):
         """
-        Returns the mean autocorrelation function and its corresponding covariance matrix given the astrophysical
+        Returns the mean of the obesrvable and its corresponding covariance matrix given the model
         parameters.
 
         Args:
-            theta_astro (array): theta_astro[0] is mfp, theta_astro[1] is mean_flux in physical units.
+            theta (array): theta parameters in physical units. Shape (ndim,)
 
         Returns:
-            (mean_autocorrelation_function, covariance_matrix)
+            (mean, covariance_matrix)
         """
-        # get the mean autocorrelation function from the neural emulator
-        mean_autocorrelation_function = self.laf_mean_emulator.predict(theta_astro).ravel()  # Is ravel is needed?
+        # get the mean from the neural emulator
+        mean = self.laf_mean_emulator.predict(theta).ravel()  # Is ravel is needed?
         # get the covariance matrix from the neural emulator
-        covariance_matrix = self.laf_cov_emulator.predict_single(theta_astro)
+        covariance_matrix = self.laf_cov_emulator.predict_single(theta)
 
-        return mean_autocorrelation_function, covariance_matrix
+        return mean, covariance_matrix
 
     # Gaussian likelihood
     @partial(jit, static_argnums=(0,))
-    def ln_gaussian_likelihood(self, x_astro, autocorrelation_fn_data):
+    def ln_gaussian_likelihood(self, x_param, observation):
         """
         Natural logarithm of the gaussian likelihood.
 
         Args:
-            x_astro (jnp.array): x_astro[0] is mfp, x_astro[1] is mean_flux in dimensionless units.
-            autocorrelation_fn_data (jnp.array): autocorrelation function that the inference is being done for.
+            x_param (jnp.array): value of parameters in dimensionless latent space. Shape of (ndims,).
+            observation (jnp.array): observed data that the inference is being done for.
 
         Returns:
             float: ln of gaussian likelihood.
         """
         # convert to physical units
-        theta_astro = self.x_to_theta(x_astro)
+        theta = self.x_to_theta(x_param)
         # obtain the mean autocorrelation model and its corresponding covariance matrix
-        mean_autocorrelation_function, covariance_matrix = self.get_mean_and_covar(theta_astro=theta_astro)
+        mean, covariance_matrix = self.get_mean_and_covar(theta=theta)
         # compute and return the gaussian likelihood
-        return jax.scipy.stats.multivariate_normal.logpdf(x=autocorrelation_fn_data,
-                                                          mean=mean_autocorrelation_function,
+        return jax.scipy.stats.multivariate_normal.logpdf(x=observation,
+                                                          mean=mean,
                                                           cov=covariance_matrix)
 
     # Now the potential function and its helper used for the numpyro NUTS sampler
     @partial(jit, static_argnums=(0,))
-    def potential_fn(self, x_astro, autocorrelation_fn_data):
+    def potential_fn(self, x_param, observation):
         """
             Potential function for the MCMC.
 
             Args:
-                x_astro (array): x_astro[0] is mfp, x_astro[1] is mean_flux in dimensionless units.
-                autocorrelation_fn_data (array): autocorrelation function that the inference is being done for.
+                x_param (jnp.array): value of parameters in dimensionless latent space. Shape of (ndims,).
+                observation (jnp.array): observed data that the inference is being done for.
 
             Returns:
                 float: potential.
             """
         # ln(prior) calculated
-        lnPrior = self.ln_prior(x_astro)
+        lnPrior = self.ln_prior(x_param)
         # ln(likelihood) calculated
-        lnL = self.ln_gaussian_likelihood(x_astro, autocorrelation_fn_data)
+        lnL = self.ln_gaussian_likelihood(x_param, observation)
         # Calculate the potential = -(ln(likelihood) + ln(prior)) \propto -ln(posterior)
         potential = -(lnPrior + lnL)
         return potential
 
-    def potential_fn_numpyro(self, autocorrelation_fn_data):
+    def potential_fn_numpyro(self, observation):
         """
         Wrapper for potential function to be used with numpyro. This allows one to call numpyro HMC with
-        given autocorrelation_fn since the NumPyro HMC sampler potential function API only allows one to pass
+        given observation since the NumPyro HMC sampler potential function API only allows one to pass
         a function that takes a single argument.
 
         Args:
-            autocorrelation_fn_data (array): autocorrelation function that the inference is being done for.
+            observation (array): observed data that the inference is being done for.
 
         Returns:
             potentical_function (function):
                 The potential function to be used with NumPyro's HMC sampler.
 
         """
-        return partial(self.potential_fn, autocorrelation_fn_data=autocorrelation_fn_data)
+        return partial(self.potential_fn, observation=observation)
 
     # Quick function that does a quick fit to use as init values for the HMC
-    def fit_one(self, autocorrelation_fn_data):
+    def fit_one(self, observation):
         """
-        Fit a single quasar spectrum using the Adam optimizer
+        Fit a single observation using the Adam optimizer
 
         Args:
-            autocorrelation_fn_data (ndarray): shape (nvelocitybins,)
-                data of the autocorrelation function we are doing the inference for.
+            observation (ndarray): shape (ndimobs,)
+                data that we are doing the inference for.
 
         Returns:
             x_out (ndarray): shape (ndim,)
                 best fit dimensionless parameter vector
             theta_out (ndarray): shape (ndim,)
                 best fit parameter vector in physical units
-            s_DR_out (ndarray): shape (nspec,)
-                best fit data reduced intrinsic quasar spectrum
             losses (ndarray): shape (opt_nsteps,)
                 loss function values at each iteration step
         """
 
         # Initialize the parameters for the new fit, just use the prior it is safer
-        x = self.theta_to_x(self.theta_astro_inits)
+        x = self.theta_to_x(self.theta_inits)
         optimizer = optax.adam(self.opt_lr)
         opt_state = optimizer.init(x)
         losses = np.zeros(self.opt_nsteps)
@@ -344,7 +328,7 @@ class HMCInference:
         iterator = trange(self.opt_nsteps, leave=False)
         best_loss = np.inf  # Models are only saved if they reduce the validation loss
         for i in iterator:
-            losses[i], grads = jax.value_and_grad(self.potential_fn, argnums=0)(x, autocorrelation_fn_data)
+            losses[i], grads = jax.value_and_grad(self.potential_fn, argnums=0)(x, observation)
             if losses[i] < best_loss:
                 x_out = x.copy()
                 theta_out = self.x_to_theta(x_out)
@@ -717,6 +701,8 @@ class HMCInference:
             theta_true (ndarray):
                 true parameter values; shape (n_dim, )
         """
+        if self.dataset_loader is None or self.z_ti is None:
+            raise ValueError("dataset_loader and z_ti are required for inferred_model_plot in the base class")
         # calculate the inferred theta values
         inferred_theta = np.median(theta_samples, axis=0)
         # calculate the inferred model, first emulate all the samples
@@ -786,19 +772,19 @@ class HMCInference:
             plt.savefig(infer_file, bbox_inches='tight')
 
 
-# A class to do the inference
-class HMCInferenceConvexHullPrior:
+# A class to do the inference with a convex-hull prior (inherits from HMCInference)
+class HMCInferenceConvexHullPrior(HMCInference):
     """
-    A class to do the inference using HMC sampling for the LAF, with only the mfp and mean flux as astrophysical
-    parameters.
-
+    HMC inference with a convex-hull prior on parameters. Inherits from HMCInference and overrides
+    the prior (convex hull check), get_mean_and_covar (predict_unlogged), mcmc_init_x (init inside hull),
+    mcmc/mcmc_save (extra ln_probs_theta), and inferred_model_plot.
     """
 
     def __init__(self, ndim, convex_hull, mean_emulator, cov_emulator, inferred_plots_dict,
                  opt_nsteps=150, opt_lr=0.01, mcmc_nsteps=1000, mcmc_num_chains=4, mcmc_warmup=1000,
                  mcmc_init_perturb=0.05,  mcmc_max_tree_depth=10, mcmc_dense_mass=True, key=random.PRNGKey(42)):
         """
-        Initialize the HMCInference class.
+        Initialize the HMCInferenceConvexHullPrior class.
 
         Args:
             ndim (int):
@@ -836,133 +822,17 @@ class HMCInferenceConvexHullPrior:
             key (JAX PRNG key):
                 pseudo-random number generator key.
         """
-        # Store the parameters
-        self.ndim = ndim  # this is hardcoded for our case
+        theta_astro_ranges = [(convex_hull.min_bound[i], convex_hull.max_bound[i]) for i in range(ndim)]
+        super().__init__(theta_astro_ranges, mean_emulator, cov_emulator, dataset_loader=None, z_ti=None,
+                         opt_nsteps=opt_nsteps, opt_lr=opt_lr, mcmc_nsteps=mcmc_nsteps,
+                         mcmc_num_chains=mcmc_num_chains, mcmc_warmup=mcmc_warmup,
+                         mcmc_init_perturb=mcmc_init_perturb, mcmc_max_tree_depth=mcmc_max_tree_depth,
+                         mcmc_dense_mass=mcmc_dense_mass, key=key)
         self.convex_hull = convex_hull
         self.hull_equations = jnp.array(convex_hull.equations)
-        self.theta_astro_ranges = [(self.convex_hull.min_bound[i], self.convex_hull.max_bound[i]) for i in range(ndim)]
-        self.theta_astro_inits = tuple([np.mean([tup[0], tup[1]]) for tup in self.theta_astro_ranges])  # mean of the ranges
-        self.theta_astro_mins = jnp.array([astro_par_range[0] for astro_par_range in self.theta_astro_ranges])
-        self.theta_astro_maxs = jnp.array([astro_par_range[1] for astro_par_range in self.theta_astro_ranges])
-
-        # Set astro parameter priors (Smoothed Box Prior is a differentiable uniform distribution)
-        self.x_astro_priors = [bounded_variable_lnP, bounded_variable_lnP]
-
-        # Store the emulators
         self.mean_emulator = mean_emulator
         self.cov_emulator = cov_emulator
-
-        # Store the inferred plots dictionary
         self.inferred_plots_dict = inferred_plots_dict
-
-        # Set the optimizer parameters
-        self.opt_nsteps = opt_nsteps
-        self.opt_lr = opt_lr
-
-        # Set the MCMC parameters
-        self.mcmc_nsteps = mcmc_nsteps  # Number of steps
-        self.mcmc_num_chains = mcmc_num_chains  # Number of walkers
-        self.mcmc_warmup = mcmc_warmup  # Number of burning steps
-        self.mcmc_max_tree_depth = mcmc_max_tree_depth
-        self.mcmc_dense_mass = mcmc_dense_mass
-        self.mcmc_init_perturb = mcmc_init_perturb  # fractional amount to perturb about optimum for MCMC chains
-        self.key = key  # random number generator key
-
-        # These are some class attributes used in the case of multiple inferences that are used to save the results
-        self.n_mock_datasets = None
-        self.theta_true = None
-        self.theta_true_ngp = None  # THIS IS TEMPORARY
-        self.theta_true_og = None  # THIS IS TEMPORARY
-        self.gaussian_mocks = None  # this is used to save the correct true model, which depends on the type of mocks
-        self.autocorrelation_fn_mock_datasets = None
-        self.x_true = None
-        self.mcmc_nsteps_tot = None
-        self.neff = None
-        self.neff_mean = None
-        self.r_hat = None
-        self.r_hat_mean = None
-        self.hmc_num_steps = None
-        self.hmc_tree_depth = None
-        self.sec_per_neff = None
-        self.ms_per_step = None
-        self.runtime = None
-        self.samples = None
-        self.x_samples = None
-        self.ln_probs_x = None
-        # Some other things we need if truths were provided
-        self.ln_prob_x_true = None
-        self.ln_like_true = None
-        self.ln_prior_x_true = None
-
-    # functions to transform between theta and x
-    # x to theta
-    @partial(jit, static_argnums=(0,))
-    def x_to_theta(self, x):
-        """
-        Transform from HMC parameter vector x into parameter vector theta. This is the vectorized version of the
-        function _x_to_theta below.
-
-        Args:
-            x (jax.numpy array):
-               HMC parameter vector. Shape (nsamples, ndim) or (ndim,)
-        Returns:
-            theta (jax.numpy array):
-               Parameter vector. Shape (nsamples, ndim) or (ndim,)
-        """
-        theta = jax.vmap(self._x_to_theta, in_axes=0, out_axes=0)(jnp.atleast_2d(x))
-        return theta.squeeze()
-
-    @partial(jit, static_argnums=(0,))
-    def _x_to_theta(self, x):
-        """
-        Transform from HMC parameter vector x into parameter vector theta. This is the single element version called by
-         the vectorized version above.
-
-        Args:
-            x (jax.numpy array):
-               HMC parameter vector. Shape (ndim,)
-        Returns:
-            theta (jax.numpy array):
-               Parameter vector. Shape (ndim,)
-        """
-
-        theta = x_to_bounded_theta(x, self.theta_astro_ranges)
-        return theta
-
-    # theta to x
-    @partial(jit, static_argnums=(0,))
-    def theta_to_x(self, theta):
-        """
-         Transform from parameter vector theta into the HMC parameter vector theta. This is the vectorized version of
-         the function _theta_to_x below.
-
-         Args:
-             theta (jax.numpy array):
-                Parameter vector. Shape (nsamples, ndim) or (ndim,)
-
-         Returns:
-             x (jax.numpy array):
-                HMC parameter vector. Shape (nsamples, ndim) or (ndim,)
-         """
-        x = jax.vmap(self._theta_to_x, in_axes=0, out_axes=0)(jnp.atleast_2d(theta))
-        return x.squeeze()
-
-    @partial(jit, static_argnums=(0,))
-    def _theta_to_x(self, theta):
-        """
-        Transform from parameter vector x into parameter vector theta. This is the single element version called by
-        the vectorized version above.
-
-        Args:
-             theta (jax.numpy array):
-                Parameter vector. Shape (nsamples, ndim) or (ndim,)
-
-        Returns:
-             x (jax.numpy array):
-                HMC parameter vector. Shape (nsamples, ndim) or (ndim,)
-        """
-        x = bounded_theta_to_x(theta, self.theta_astro_ranges)
-        return x
 
     # method to check if a point is inside the convex hull using JAX
     @partial(jit, static_argnums=(0,))
@@ -1045,48 +915,13 @@ class HMCInferenceConvexHullPrior:
 
         return mean_statistic, covariance_matrix
 
-    # Gaussian likelihood
-    @partial(jit, static_argnums=(0,))
-    def ln_gaussian_likelihood(self, x_astro, observed_data):
-        """
-        Natural logarithm of the gaussian likelihood.
-
-        Args:
-            x_astro (jnp.array): model parameters in dimensionless units.
-            observed_data (jnp.array): observed data that the inference is being done for.
-
-        Returns:
-            float: ln of gaussian likelihood.
-        """
-        # convert to physical units
-        theta_astro = self.x_to_theta(x_astro)
-        # obtain the mean autocorrelation model and its corresponding covariance matrix
-        mean_statistic, covariance_matrix = self.get_mean_and_covar(theta_astro=theta_astro)
-        # compute and return the gaussian likelihood
-        return jax.scipy.stats.multivariate_normal.logpdf(x=observed_data,
-                                                          mean=mean_statistic,
-                                                          cov=covariance_matrix)
-
-    # Now the potential function and its helper used for the numpyro NUTS sampler
+    # Override potential_fn so numpyro wrapper can use keyword observed_data (base uses autocorrelation_fn_data)
     @partial(jit, static_argnums=(0,))
     def potential_fn(self, x_astro, observed_data):
-        """
-            Potential function for the MCMC.
-
-            Args:
-                x_astro (array): model parameters in dimensionless units.
-                observed_data (array): observed data that the inference is being done for.
-
-            Returns:
-                float: potential.
-            """
-        # ln(prior) calculated
+        """Potential function (same as base; overridden for consistent observed_data keyword)."""
         lnPrior = self.ln_prior(x_astro)
-        # ln(likelihood) calculated
         lnL = self.ln_gaussian_likelihood(x_astro, observed_data)
-        # Calculate the potential = -(ln(likelihood) + ln(prior)) \propto -ln(posterior)
-        potential = -(lnPrior + lnL)
-        return potential
+        return -(lnPrior + lnL)
 
     # A function that computes lnP in the theta units
     @partial(jit, static_argnums=(0,))
@@ -1156,130 +991,13 @@ class HMCInferenceConvexHullPrior:
         """
         return partial(self.potential_fn, observed_data=observed_data)
 
-    # Quick function that does a quick fit to use as init values for the HMC
     def fit_one(self, observed_data):
-        """
-        Fit a single observed data array to get initial values for the HMC sampler.
+        """Thin wrapper so callers can use observed_data; delegates to base fit_one."""
+        return super().fit_one(observed_data)
 
-        Args:
-            observed_data (ndarray): shape (nbins,)
-                data of the autocorrelation function we are doing the inference for.
-
-        Returns:
-            x_out (ndarray): shape (ndim,)
-                best fit dimensionless parameter vector
-            theta_out (ndarray): shape (ndim,)
-                best fit parameter vector in physical units
-            losses (ndarray): shape (opt_nsteps,)
-                loss function values at each iteration step
-        """
-
-        # Initialize the parameters for the new fit, just use the prior it is safer
-        x = self.theta_to_x(self.theta_astro_inits)
-        optimizer = optax.adam(self.opt_lr)
-        opt_state = optimizer.init(x)
-        losses = np.zeros(self.opt_nsteps)
-        # Optimization loop for fitting the observed data using the emulators
-        iterator = trange(self.opt_nsteps, leave=False)
-        best_loss = np.inf  # Models are only saved if they reduce the validation loss
-        for i in iterator:
-            losses[i], grads = jax.value_and_grad(self.potential_fn, argnums=0)(x, observed_data)
-            if losses[i] < best_loss:
-                x_out = x.copy()
-                theta_out = self.x_to_theta(x_out)
-                best_loss = losses[i]
-            updates, opt_state = optimizer.update(grads, opt_state)
-            x = optax.apply_updates(x, updates)
-
-        return x_out, theta_out, losses
-
-    # Now the HMC function
     def mcmc_one(self, key, x_opt, observed_data):
-        """
-        HMC routine for a single observed data array.
-
-        Args:
-            key (JAX PRNG key)
-                pseudo-random number generator key
-            x_opt (ndarray): shape (ndim,)
-                best fit dimensionless parameter vector
-            observed_data (ndarray): shape (nbins,)
-                observed data that the inference is being done for.
-
-        Returns:
-            x_samples (ndarray):
-                dimensionless samples saved for convenience; shape (mcmc_nsteps_tot, ndim)
-            theta_samples (ndarray):
-                parameter samples in physical units; shape (mcmc_nsteps_tot, ndim)
-            lnP (ndarray):
-                potential energy of HMC; shape (mcmc_nsteps_tot, )
-            neff (ndarray):
-                effective number of steps for each param; shape (mcmc_nsteps_tot, )
-            neff_mean (float):
-                average n_eff, here for convenience
-            sec_per_neff (float):
-                seconds per neff
-            ms_per_step (float):
-                milliseconds per step
-            r_hat (ndarray):
-                ratio of within-chain variance and posterior variance for convergence diagnostics;
-                shape (mcmc_nsteps_tot, )
-            r_hat_mean (float):
-                average r_hat, here for convenience
-            hmc_num_steps (int):
-                number of steps in the Hamiltonian trajectory (for diagnostics)
-            hmc_tree_depth (int):
-                tree depth of the Hamiltonian trajectory (for diagnostics)
-            total_time (float):
-                total time for the MCMC run
-        """
-
-        # Initialize the MCMC parameters for each chain
-        x_init = self.mcmc_init_x(self.mcmc_num_chains, self.mcmc_init_perturb, x_opt)
-        # Instantiate the NUTS kernel and the mcmc object
-        nuts_kernel = NUTS(potential_fn=self.potential_fn_numpyro(observed_data),
-                           adapt_step_size=True, dense_mass=self.mcmc_dense_mass,
-                           max_tree_depth=self.mcmc_max_tree_depth)
-        mcmc = MCMC(nuts_kernel, num_warmup=self.mcmc_warmup, num_samples=self.mcmc_nsteps,
-                    num_chains=self.mcmc_num_chains,
-                    chain_method='vectorized', jit_model_args=True)  # chain_method='sequential'
-        # Run the MCMC
-        start_time = time.time()
-        mcmc.run(key, init_params=x_init, extra_fields=('potential_energy', 'num_steps'))
-        total_time = time.time() - start_time
-        print(f'Run time: {total_time:.2f} seconds')
-
-        # Compute the neff and summarize cost
-        az_summary = az.summary(az.from_numpyro(mcmc))
-        neff = az_summary["ess_bulk"].to_numpy()
-        neff_mean = np.mean(neff)
-        r_hat = az_summary["r_hat"].to_numpy()
-        r_hat_mean = np.mean(r_hat)
-        sec_per_neff = (total_time / neff_mean)
-        # Grab the samples and lnP
-        x_samples = mcmc.get_samples(group_by_chain=True)
-        theta_samples = self.x_to_theta(mcmc.get_samples())
-        # lnP = -mcmc.get_extra_fields()['potential_energy']  # negative the potential is the log posterior ORIGINAL
-        lnP = -mcmc.get_extra_fields(group_by_chain=True)['potential_energy']
-        hmc_num_steps = mcmc.get_extra_fields()['num_steps']  # No of steps in Hamiltonian trajectory (for diagnostics).
-        hmc_tree_depth = np.log2(hmc_num_steps).astype(int) + 1  # Tree depth of Hamiltonian traj (for diagnostics).
-        hit_max_tree_depth = np.sum(hmc_tree_depth == self.mcmc_max_tree_depth)  # No of transitions that hit the max tree depth.
-        ms_per_step = 1e3 * total_time / np.sum(hmc_num_steps)
-
-        print(f"\n*** SUMMARY FOR HMC ***")
-        print(f"total_time = {total_time} seconds for the HMC")
-        print(f"total_steps = {np.sum(hmc_num_steps)} total steps")
-        print(f"ms_per_step = {ms_per_step} ms per step of the HMC")
-        print(f"n_eff_mean = {neff_mean} effective sample size.")  # with ntot = {self.mcmc_nsteps_tot} total samples.")
-        print(f"sec_per_neff = {sec_per_neff:.3f} seconds per effective sample")
-        print(f"r_hat_mean = {r_hat_mean}")
-        print(f"max_tree_depth encountered = {hmc_tree_depth.max()} in chain")
-        print(f"There were {hit_max_tree_depth} transitions that exceeded the max_tree_depth = {self.mcmc_max_tree_depth}")
-        print("*************************\n")
-
-        # Return the values needed
-        return x_samples, theta_samples, lnP, neff, neff_mean, sec_per_neff, ms_per_step, r_hat, r_hat_mean, \
-               hmc_num_steps, hmc_tree_depth, total_time
+        """Thin wrapper so callers can use observed_data; delegates to base mcmc_one."""
+        return super().mcmc_one(key, x_opt, observed_data)
 
     def mcmc(self, mock_datasets_to_fit, theta_true, theta_true_og, gaussian_mocks,
              out_prefix=f'data/multiple_inferences/', debug=False):
@@ -1506,24 +1224,8 @@ class HMCInferenceConvexHullPrior:
                 # temporary
                 group.create_dataset('ln_prob_x_true_og', data=self.ln_prob_x_true_og)
 
-    # functions to do the MCMC initialization
-    def x_minmax(self):
-        x_min, x_max = bounded_theta_to_x(self.theta_astro_mins, self.theta_astro_ranges), \
-                        bounded_theta_to_x(self.theta_astro_maxs, self.theta_astro_ranges)
-
-        return x_min, x_max
-
     def mcmc_init_x(self, nwalkers, perturb, x_opt):
-        """
-
-        Args:
-            nwalkers:
-            perturb:
-            x_opt:
-
-        Returns:
-
-        """
+        """Initialize MCMC chains inside the convex hull (overrides base to enforce hull constraint)."""
         # get the ranges in dimensionless space
         x_min, x_max = self.x_minmax()
         delta_x = x_max - x_min
