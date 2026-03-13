@@ -15,6 +15,7 @@ from jax_dne_hmc.data import ToyLinearCovLoader
 from jax_dne_hmc.dne.mean_emulator import MeanEmulator
 from jax_dne_hmc.dne.covariance_emulator import CovarEmulator
 from jax_dne_hmc.dne.scalers import DiffMinMaxScaler
+from jax_dne_hmc.hmc.hmc import HMCInference
 
 from IPython import embed
 
@@ -23,14 +24,29 @@ from IPython import embed
 ####################################################################################################
 
 # Directories for results
+base_directory = '/Users/diegogonzalez/Documents/Research/ENIGMA/DNE-HMC/jax_dne_hmc/jax_dne_hmc/examples/toy_linear_model/inference_results'
+inferences_dir = f'{base_directory}/inference/inference_on_mocks/'
+
 mean_base_directory = '/Users/diegogonzalez/Documents/Research/ENIGMA/DNE-HMC/jax_dne_hmc/jax_dne_hmc/examples/toy_linear_model/mean_emulator_results'
-covar_base_directory = '/Users/diegogonzalez/Documents/Research/ENIGMA/DNE-HMC/jax_dne_hmc/jax_dne_hmc/examples/toy_linear_model/covar_emulator_results'
 mean_hparam_results_dir = f'{mean_base_directory}/hparam_results'
 mean_best_model_directory = f'{mean_hparam_results_dir}/best_model'
+
+covar_base_directory = '/Users/diegogonzalez/Documents/Research/ENIGMA/DNE-HMC/jax_dne_hmc/jax_dne_hmc/examples/toy_linear_model/covar_emulator_results'
 covar_hparam_results_dir = f'{covar_base_directory}/hparam_results'
 covar_best_model_directory = f'{covar_hparam_results_dir}/best_model'
 
+# parameters for the HMC inference
+N_MOCKS = 25  
 
+MCMC_NSTEPS = 2000  
+MCMC_WARMUP = 2000  
+MCMC_NUM_CHAINS = 4  
+
+M_PRIOR = (3.0, 8.0)
+B_PRIOR = (1.0, 4.0)
+
+# second, create the directories
+os.makedirs(inferences_dir, exist_ok=True)
 
 ####################################################################################################
 #                                    LOAD AND PREPARE DATA                                         #
@@ -203,3 +219,31 @@ covar_emulator = CovarEmulator.load_model(checkpoint_dir=covar_best_model_direct
                                           X_scaler_transform=scaler_X.transform,
                                           y_scaler_inverse_transform=scaler_y_covar.inverse_transform)
 
+
+####################################################################################################
+#                                      PERFORM INFERENCE                                           #
+####################################################################################################
+
+# randomly select N_MOCKS to run the inference for
+mocks_subkey1, mocks_subkey2 = jax.random.split(jax.random.PRNGKey(3432))
+
+i = jax.random.randint(mocks_subkey1, (N_MOCKS,), 0, mocks.shape[0])
+j = jax.random.randint(mocks_subkey2, (N_MOCKS,), 0, mocks.shape[1])
+
+mocks_for_inference = mocks[i, j]
+theta_true_for_inference = theta[i]
+
+# instantiate the inference class
+hmc_inference = HMCInference(theta_prior_ranges=[M_PRIOR, B_PRIOR],
+                             mean_emulator=mean_emulator,
+                             covar_emulator=covar_emulator,
+                             dataset_loader=loader,
+                             mcmc_nsteps=MCMC_NSTEPS,
+                             mcmc_num_chains=MCMC_NUM_CHAINS,
+                             mcmc_warmup=MCMC_WARMUP)
+
+# Now perform the inferences and save the results
+hmc_inference.mcmc(observation_datasets_to_fit=mocks_for_inference,
+                   theta_true=theta_true_for_inference,
+                   out_prefix=inferences_dir,
+                   debug=False)

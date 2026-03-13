@@ -163,7 +163,7 @@ class HMCInference:
                Parameter vector. Shape (ndim,)
         """
 
-        theta = x_to_bounded_theta(x, self.theta_astro_ranges)
+        theta = x_to_bounded_theta(x, self.theta_prior_ranges)
         return theta
 
     # theta to x
@@ -198,7 +198,7 @@ class HMCInference:
              x (jax.numpy array):
                 HMC parameter vector. Shape (nsamples, ndim) or (ndim,)
         """
-        x = bounded_theta_to_x(theta, self.theta_astro_ranges)
+        x = bounded_theta_to_x(theta, self.theta_prior_ranges)
         return x
 
     # Now the log functions for the prior and likelihood evaluations
@@ -237,9 +237,9 @@ class HMCInference:
             (mean, covariance_matrix)
         """
         # get the mean from the neural emulator
-        mean = self.laf_mean_emulator.predict(theta).ravel()  # Is ravel is needed?
+        mean = self.mean_emulator.predict(theta).ravel()  # Is ravel is needed?
         # get the covariance matrix from the neural emulator
-        covariance_matrix = self.laf_cov_emulator.predict_single(theta)
+        covariance_matrix = self.covar_emulator.predict_single(theta)
 
         return mean, covariance_matrix
 
@@ -499,9 +499,6 @@ class HMCInference:
 
                 self.ln_prior_x_true[imock] = self.ln_prior(x_param=self.x_true[imock, :])
 
-                self.ln_prob_x_true_og[imock] = -self.potential_fn(x_param=self.x_true_og[imock, :],
-                                                                   observation=observation)
-
             # Split the key
             self.key, subkey = random.split(self.key)
 
@@ -605,13 +602,11 @@ class HMCInference:
                 group.create_dataset('ln_prior_x_true', data=self.ln_prior_x_true)
                 group.create_dataset('theta_true', data=self.theta_true)
                 group.create_dataset('x_true', data=self.x_true)
-                # temporary
-                group.create_dataset('ln_prob_x_true_og', data=self.ln_prob_x_true_og)
 
     # functions to do the MCMC initialization
     def x_minmax(self):
-        x_min, x_max = bounded_theta_to_x(self.theta_astro_mins, self.theta_astro_ranges), \
-                        bounded_theta_to_x(self.theta_astro_maxs, self.theta_astro_ranges)
+        x_min, x_max = bounded_theta_to_x(self.theta_prior_mins, self.theta_prior_ranges), \
+                        bounded_theta_to_x(self.theta_prior_maxs, self.theta_prior_ranges)
 
         return x_min, x_max
 
