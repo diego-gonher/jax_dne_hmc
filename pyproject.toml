@@ -25,7 +25,9 @@ dependencies = [
   "scienceplots",
   "clu",
   "ipython',
-  "optuna",
+  "optuna"
+  "arviz[matplotlib]",
+  "corner",
 ]
 
 [project.optional-dependencies]

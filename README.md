@@ -72,8 +72,7 @@ A schematic of the workflow:
 ```
 Simulations → Summary statistics
         ↓
-Train μ emulator
-Train Σ emulator
+Train μ emulator and Σ emulator
         ↓
 Likelihood with emulated μ(θ), Σ(θ)
         ↓
@@ -258,26 +257,57 @@ The tuner automatically:
 
 ---
 
+# Using the HMC Inference Class
+
+Once mean and covariance emulators are trained (for example with the toy linear model scripts),
+you can run HMC inference using `HMCInference`, as illustrated in
+`jax_dne_hmc/examples/toy_linear_model/inference_script.py`:
+
+```python
+from jax_dne_hmc.data import ToyLinearCovLoader
+from jax_dne_hmc.dne.mean_emulator import MeanEmulator
+from jax_dne_hmc.dne.covariance_emulator import CovarEmulator
+from jax_dne_hmc.hmc.hmc import HMCInference
+
+loader = ToyLinearCovLoader()
+data = loader.get_data()
+theta, mu, Sigma, mocks = data["theta"], data["mu"], data["Sigma"], data["y_mocks"]
+
+# load best-trained emulators (paths follow the training examples)
+mean_emu = MeanEmulator.load_model(checkpoint_dir=".../mean_best_model", ...)
+cov_emu = CovarEmulator.load_model(checkpoint_dir=".../covar_best_model", ...)
+
+theta_ranges = [(3.0, 8.0), (1.0, 4.0)]  # example priors on (m, b)
+hmc = HMCInference(theta_astro_ranges=theta_ranges,
+                   laf_mean_emulator=mean_emu,
+                   laf_cov_emulator=cov_emu,
+                   dataset_loader=None,
+                   z_ti=None)
+
+x_opt, theta_opt, _ = hmc.fit_one(autocorrelation_fn_data=mocks[0].mean(axis=0))
+results = hmc.mcmc_one(key=hmc.key, x_opt=x_opt, autocorrelation_fn_data=mocks[0].mean(axis=0))
+```
+
+The example script in `examples/toy_linear_model/inference_script.py` shows a complete pipeline:
+loading trained emulators, selecting a subset of mocks, running HMC, and saving diagnostics.
+
+---
+
 # Repository Structure
 
 ```
 jax_dne_hmc
 │
-├── data
-│   └── dataset loaders
+├── jax_dne_hmc
+│   ├── data            # dataset loaders and toy HDF5 access
+│   ├── dne             # architectures, emulators, scalers, losses, hparam tuning
+│   ├── hmc             # HMC inference classes
+│   ├── utils           # covariance and HMC utility functions
+│   └── examples
+│       └── toy_linear_model  # training, tuning, and inference scripts
 │
-├── dne
-│   ├── architectures
-│   ├── mean_emulator
-│   ├── covariance_emulator
-│   ├── scalers
-│   └── hyperparameter tuning
-│
-├── utils
-│   └── covariance metrics
-│
-└── examples
-    └── toy_linear_model
+├── pyproject.toml
+└── README.md
 ```
 
 ---
@@ -289,11 +319,11 @@ Current implemented features:
 * Mean emulator training
 * Covariance emulator training
 * Hyper-parameter tuning utilities
+* HMC inference pipeline
 * Toy dataset and full training examples
 
 Planned additions:
 
-* HMC inference pipeline
 * posterior diagnostics
 
 ---
