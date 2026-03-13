@@ -10,3 +10,4 @@ __pycache__/
 
 jax_dne_hmc/examples/toy_linear_model/mean_emulator_results/*
 jax_dne_hmc/examples/toy_linear_model/covar_emulator_results/*
+jax_dne_hmc/examples/toy_linear_model/inference_results/*
