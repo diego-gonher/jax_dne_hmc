@@ -13,6 +13,7 @@ import jax.numpy as jnp
 from jax import config
 
 from numpyro.infer import MCMC, NUTS
+import corner
 import arviz as az
 import h5py
 import optax
@@ -530,8 +531,7 @@ class HMCInference:
                 indx = imock
                 qa_imock = 'imock_{:03d}'.format(indx)
                 cornerfile = out_prefix + '_corner_' + qa_imock + '.pdf'
-                x_cornerfile = out_prefix + '_x-corner_' + qa_imock + '.pdf'
-                infer_file = out_prefix + '_infer_' + qa_imock + '.pdf'
+                x_cornerfile = out_prefix + '_x_corner_' + qa_imock + '.pdf'
 
                 _x_true = self.x_true[imock, :] if self.x_true is not None else None
                 _theta_true = self.theta_true[imock, :] if self.theta_true is not None else None
@@ -542,15 +542,15 @@ class HMCInference:
                 # Produce the plots, make it as generic as possible
                 plt.close()
                 # Corner plot in HMC units
-                corner_plot(self.x_samples[imock, ...],
-                            theta_true=_x_true if self.x_true is not None else None,
-                            cornerfile=x_cornerfile)
-                plt.close()
+                corner_figure_x = corner.corner(self.x_samples[imock, ...],
+                                                truths=_x_true if self.x_true is not None else None)
+                corner_figure_x.savefig(x_cornerfile, bbox_inches="tight")
+                plt.close(corner_figure_x)
                 # Corner plot in physical units
-                corner_plot(self.samples[imock, ...],
-                            theta_true=self.theta_true[imock, :] if self.theta_true is not None else None,
-                            cornerfile=cornerfile)
-                plt.close()
+                corner_figure_theta = corner.corner(self.samples[imock, ...],
+                                                    truths=self.theta_true[imock, :] if self.theta_true is not None else None)
+                corner_figure_theta.savefig(cornerfile, bbox_inches="tight")
+                plt.close(corner_figure_theta)
 
         plt.close('all')
 
